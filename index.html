@@ -1,0 +1,991 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Banjo Chord Builder</title>
+<style>
+  :root {
+    --bg: #f4f4f2;
+    --panel: #ffffff;
+    --ink: #1b1b1b;
+    --muted: #666;
+    --line: #d8d8d4;
+    --accent: #1f5fbf;
+    --accent-ink: #ffffff;
+    --warn: #b3261e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  }
+  header h1 { margin: 0; font-size: 18px; }
+  header p { margin: 0; color: var(--muted); }
+  main {
+    display: grid;
+    grid-template-columns: minmax(300px, 380px) 1fr;
+    gap: 16px;
+    padding: 16px;
+    align-items: start;
+  }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  section.card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px;
+    min-width: 0;
+  }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  h3 { font-size: 13px; margin: 14px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  label { display: inline-flex; align-items: center; gap: 6px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+  input[type=text], input[type=number], select {
+    font: inherit; padding: 5px 7px; border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--ink);
+  }
+  input[type=number] { width: 64px; }
+  input#chordName { width: 140px; font-weight: 600; }
+  button {
+    font: inherit; padding: 5px 10px; border: 1px solid var(--line); border-radius: 5px;
+    background: #fff; color: var(--ink); cursor: pointer;
+  }
+  button:hover { border-color: #999; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button[aria-pressed=true] { background: var(--ink); color: #fff; border-color: var(--ink); }
+  button:disabled { opacity: .45; cursor: default; }
+  .seg { display: inline-flex; }
+  .seg button { border-radius: 0; margin-left: -1px; min-width: 34px; }
+  .seg button:first-child { border-radius: 5px 0 0 5px; margin-left: 0; }
+  .seg button:last-child { border-radius: 0 5px 5px 0; }
+  #editorWrap { display: flex; justify-content: center; padding: 6px 0; }
+  #editor svg { width: 260px; height: auto; display: block; user-select: none; }
+  #editor .hit { fill: transparent; cursor: pointer; }
+  #editor .hit:hover { fill: rgba(31,95,191,.14); }
+  #editor .hit.pending { fill: rgba(31,95,191,.30); }
+  .hint { color: var(--muted); font-size: 12.5px; }
+  #msg { min-height: 1.4em; color: var(--warn); font-size: 13px; }
+  .detected { font-size: 13px; }
+  .detected b { font-size: 14px; }
+  .strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; margin-top: 8px; }
+  .strip button { padding: 2px; background: #fff; }
+  .strip button svg { width: 100%; height: auto; display: block; }
+  .strip button.active { outline: 2px solid var(--accent); }
+
+  /* Sheet */
+  #sheetTools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  #sheetPaper {
+    background: #fff; color: #000;
+    border: 1px solid var(--line);
+    padding: 24px;
+    max-width: 8.5in;
+    margin: 0 auto;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  }
+  #sheetTitle {
+    display: block; width: 100%; border: none; text-align: center;
+    font: 700 22px/1.2 Georgia, "Times New Roman", serif; color: #000; background: transparent;
+    margin-bottom: 14px; padding: 2px;
+  }
+  #sheetTitle:focus { outline: 1px dashed #aaa; }
+  #sheet { display: grid; grid-template-columns: repeat(var(--cols, 4), 1fr); gap: 10px 8px; }
+  .sheet-item { position: relative; border-radius: 6px; cursor: pointer; break-inside: avoid; page-break-inside: avoid; }
+  .sheet-item svg { width: 100%; height: auto; display: block; }
+  .sheet-item:hover { background: #f1f5fc; }
+  .sheet-item.editing { outline: 2px solid var(--accent); }
+  .sheet-item .tools {
+    position: absolute; top: 2px; right: 2px; display: none; gap: 2px;
+  }
+  .sheet-item:hover .tools, .sheet-item:focus-within .tools { display: flex; }
+  .sheet-item .tools button { padding: 0 6px; font-size: 12px; line-height: 20px; }
+  .empty { color: var(--muted); text-align: center; padding: 40px 0; grid-column: 1 / -1; }
+
+  @media print {
+    @page { margin: 0.5in; }
+    body { background: #fff; }
+    header, #controls, #sheetTools, .sheet-item .tools, .no-print { display: none !important; }
+    main { display: block; padding: 0; }
+    section.card { border: none; padding: 0; }
+    #sheetPaper { border: none; box-shadow: none; padding: 0; max-width: none; }
+    .sheet-item:hover { background: none; }
+    .sheet-item.editing { outline: none; }
+    .empty { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Banjo Chord Builder</h1>
+  <p>Click the neck to place fingers, build a sheet, print it.</p>
+</header>
+
+<main>
+  <!-- ============ Editor + library ============ -->
+  <section class="card" id="controls">
+    <h2>Chord editor</h2>
+
+    <div class="row">
+      <label>Name <input type="text" id="chordName" placeholder="e.g. G7"></label>
+      <button id="useDetected" title="Use the detected chord name">Use detected</button>
+    </div>
+    <div class="detected" id="detected"></div>
+
+    <div class="row">
+      <label>Tuning
+        <select id="tuning"></select>
+      </label>
+    </div>
+    <div class="row">
+      <label>Start fret <input type="number" id="startFret" min="1" max="20" value="1"></label>
+      <label>Frets shown <input type="number" id="numFrets" min="3" max="8" value="5"></label>
+    </div>
+
+    <div class="row">
+      <span>Tool</span>
+      <span class="seg" role="group" aria-label="Tool">
+        <button data-tool="dot" aria-pressed="true">Dot</button>
+        <button data-tool="barre" aria-pressed="false">Barre</button>
+      </span>
+    </div>
+    <div class="row">
+      <span>Finger</span>
+      <span class="seg" role="group" aria-label="Finger label" id="fingerSeg">
+        <button data-finger="" aria-pressed="true" title="No label">–</button>
+        <button data-finger="1" aria-pressed="false">1</button>
+        <button data-finger="2" aria-pressed="false">2</button>
+        <button data-finger="3" aria-pressed="false">3</button>
+        <button data-finger="4" aria-pressed="false">4</button>
+        <button data-finger="T" aria-pressed="false" title="Thumb">T</button>
+      </span>
+    </div>
+
+    <div id="editorWrap"><div id="editor"></div></div>
+    <div id="msg" role="status"></div>
+    <p class="hint">
+      Click a fret to place a dot (with the selected finger label). Click a dot again to remove it,
+      or with a different finger selected to relabel it. Click above the nut to toggle open (○) / muted (×).
+      Barre tool: click two strings on the same fret. Ctrl/⌘+Z undoes.
+    </p>
+
+    <div class="row">
+      <button id="autoFinger">Auto-finger</button>
+      <button id="clearFingers">Clear labels</button>
+      <button id="clearChord">Clear chord</button>
+      <button id="undo">Undo</button>
+    </div>
+    <div class="row">
+      <button class="primary" id="addToSheet">Add to sheet</button>
+      <button id="saveToSheet" disabled>Save changes</button>
+      <button id="dlSvg">SVG</button>
+      <button id="dlPng">PNG</button>
+    </div>
+
+    <h3>Chord library</h3>
+    <div class="row">
+      <select id="libRoot" aria-label="Root"></select>
+      <select id="libQual" aria-label="Chord type"></select>
+      <button id="libFind">Find voicings</button>
+    </div>
+    <div class="hint" id="libInfo">Voicings are computed for the selected tuning, easiest first. Click one to load it.</div>
+    <div class="strip" id="libStrip"></div>
+
+    <h3>Quick start</h3>
+    <div class="row">
+      <select id="presetSet" aria-label="Preset set"></select>
+      <button id="addPreset">Add set to sheet</button>
+    </div>
+  </section>
+
+  <!-- ============ Printable sheet ============ -->
+  <section class="card">
+    <div id="sheetTools">
+      <h2 style="margin:0 8px 0 0">Sheet</h2>
+      <label>Per row
+        <select id="cols">
+          <option>3</option><option selected>4</option><option>5</option><option>6</option>
+        </select>
+      </label>
+      <label>Finger labels
+        <select id="fingerStyle">
+          <option value="in">In dots</option>
+          <option value="below">Below</option>
+          <option value="none">Hidden</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="showNotes"> Note names</label>
+      <label><input type="checkbox" id="dashed5" checked> Short 5th string</label>
+      <button id="addBlank">Add blank chart</button>
+      <button id="clearSheet">Clear sheet</button>
+      <button id="exportJson">Save file</button>
+      <button id="importJson">Open file</button>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+      <button class="primary" id="print">Print</button>
+    </div>
+    <div id="sheetPaper">
+      <input id="sheetTitle" value="Banjo Chords" aria-label="Sheet title">
+      <div id="sheet"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+/* ================= Music data ================= */
+
+const NOTE_NAMES = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
+
+// Strings are indexed left-to-right as drawn: 0 = 5th (short drone) string, 4 = 1st string.
+// Pitches are MIDI note numbers of the open strings.
+const TUNINGS = {
+  openG:   { name: 'Open G (gDGBD)',      open: [67, 50, 55, 59, 62] },
+  doubleC: { name: 'Double C (gCGCD)',    open: [67, 48, 55, 60, 62] },
+  openC:   { name: 'Open C (gCGBD)',      open: [67, 48, 55, 59, 62] },
+  gModal:  { name: 'G Modal / Sawmill (gDGCD)', open: [67, 50, 55, 60, 62] },
+  openD:   { name: 'Open D (f#DF#AD)',    open: [66, 50, 54, 57, 62] },
+  aTuning: { name: 'Open A (aEAC#E)',     open: [69, 52, 57, 61, 64] },
+};
+
+// The 5th string only exists from the 5th fret up; its first playable fret is 6.
+const FIFTH_MIN_FRET = 6;
+
+const QUALITIES = [
+  { id: 'maj',   suffix: '',      label: 'major',  iv: [0,4,7] },
+  { id: 'm',     suffix: 'm',     label: 'minor',  iv: [0,3,7] },
+  { id: '7',     suffix: '7',     label: '7',      iv: [0,4,7,10] },
+  { id: 'm7',    suffix: 'm7',    label: 'm7',     iv: [0,3,7,10] },
+  { id: 'maj7',  suffix: 'maj7',  label: 'maj7',   iv: [0,4,7,11] },
+  { id: '6',     suffix: '6',     label: '6',      iv: [0,4,7,9] },
+  { id: 'm6',    suffix: 'm6',    label: 'm6',     iv: [0,3,7,9] },
+  { id: 'sus4',  suffix: 'sus4',  label: 'sus4',   iv: [0,5,7] },
+  { id: 'sus2',  suffix: 'sus2',  label: 'sus2',   iv: [0,2,7] },
+  { id: '7sus4', suffix: '7sus4', label: '7sus4',  iv: [0,5,7,10] },
+  { id: 'add9',  suffix: 'add9',  label: 'add9',   iv: [0,2,4,7] },
+  { id: '9',     suffix: '9',     label: '9',      iv: [0,2,4,7,10] },
+  { id: 'dim',   suffix: 'dim',   label: 'dim',    iv: [0,3,6] },
+  { id: 'dim7',  suffix: 'dim7',  label: 'dim7',   iv: [0,3,6,9] },
+  { id: 'm7b5',  suffix: 'm7b5',  label: 'm7♭5',   iv: [0,3,6,10] },
+  { id: 'aug',   suffix: 'aug',   label: 'aug',    iv: [0,4,8] },
+  { id: '5',     suffix: '5',     label: '5 (power)', iv: [0,7] },
+];
+
+const PRESET_SETS = [
+  { name: 'Key of G basics (G C D D7 Em Am)', chords: ['G','C','D','D7','Em','Am'] },
+  { name: 'Key of C basics (C F G G7 Am Dm)', chords: ['C','F','G','G7','Am','Dm'] },
+  { name: 'Key of D basics (D G A A7 Bm Em)', chords: ['D','G','A','A7','Bm','Em'] },
+  { name: 'Key of A basics (A D E E7 F#m Bm)', chords: ['A','D','E','E7','F#m','Bm'] },
+  { name: 'Common 7ths (G7 C7 D7 E7 A7 B7)', chords: ['G7','C7','D7','E7','A7','B7'] },
+  { name: 'Major chords, all 12', chords: NOTE_NAMES.slice() },
+  { name: 'Minor chords, all 12', chords: NOTE_NAMES.map(n => n + 'm') },
+];
+
+const pc = n => ((n % 12) + 12) % 12;
+
+function pitchAt(tuningId, s, fret) {
+  const open = TUNINGS[tuningId].open[s];
+  if (fret === null) return null;
+  if (fret === 0) return open;
+  if (s === 0) return fret >= FIFTH_MIN_FRET ? open + (fret - 5) : null;
+  return open + fret;
+}
+
+function parseChordName(name) {
+  const m = /^([A-G])([#b]?)(.*)$/.exec(name.trim());
+  if (!m) return null;
+  const base = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 }[m[1]];
+  const root = pc(base + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0));
+  const q = QUALITIES.find(q => q.suffix === m[3]);
+  return q ? { root, q } : null;
+}
+
+/* ---------- chord detection ---------- */
+
+function detectChord(ch) {
+  const pitches = [];
+  for (let s = 0; s < 5; s++) {
+    const p = pitchAt(ch.tuning, s, ch.frets[s]);
+    if (p !== null) pitches.push(p);
+  }
+  if (!pitches.length) return [];
+  const pcs = [...new Set(pitches.map(pc))];
+  const bass = pc(Math.min(...pitches));
+  const results = [];
+  for (const root of pcs) {
+    const ivs = new Set(pcs.map(p => pc(p - root)));
+    QUALITIES.forEach((q, qi) => {
+      const T = new Set(q.iv);
+      for (const i of ivs) if (!T.has(i)) return;
+      const missing = q.iv.filter(i => !ivs.has(i));
+      if (missing.some(i => i !== 7)) return;              // only an omitted perfect 5th is tolerated
+      if (q.id === '5' && missing.length) return;
+      if (ivs.size < 2) return;
+      let score = qi * 0.05 + (missing.length ? 2 : 0) + (root !== bass ? 1 : 0);
+      // Banjo charts name chords by root only (open G is "G", not "G/D"), but a root
+      // in the bass still wins ties, e.g. C6 vs Am7.
+      results.push({ name: NOTE_NAMES[root] + q.suffix, score, partial: missing.length > 0 });
+    });
+  }
+  results.sort((a, b) => a.score - b.score);
+  const seen = new Set();
+  return results.filter(r => !seen.has(r.name) && seen.add(r.name));
+}
+
+/* ---------- voicing generator ---------- */
+
+function generateVoicings(tuningId, root, q, limit = 16) {
+  const T = new Set(q.iv.map(i => pc(root + i)));
+  const required = q.id === '5' ? q.iv : q.iv.filter(i => i !== 7);
+  const requiredPcs = required.map(i => pc(root + i));
+  const open = TUNINGS[tuningId].open;
+  const MAXF = 14;
+  const out = [];
+  const seen = new Set();
+
+  // Per main string (indices 1..4), the frets that produce a chord tone.
+  const options = [1,2,3,4].map(s => {
+    const a = [];
+    for (let f = 0; f <= MAXF; f++) if (T.has(pc(open[s] + f))) a.push(f);
+    return a;
+  });
+
+  for (const f1 of options[0]) for (const f2 of options[1]) for (const f3 of options[2]) for (const f4 of options[3]) {
+    const frets4 = [f1, f2, f3, f4];
+    const fretted = frets4.filter(f => f > 0);
+    let minF = 0, maxF = 0;
+    if (fretted.length) {
+      minF = Math.min(...fretted); maxF = Math.max(...fretted);
+      if (maxF - minF > 3) continue;
+    }
+    const pcsHere = new Set(frets4.map((f, i) => pc(open[i + 1] + f)));
+    if (!requiredPcs.every(p => pcsHere.has(p))) continue;
+
+    // Fifth string: play it open if it's a chord tone, otherwise mute it.
+    const fifthOk = T.has(pc(open[0]));
+    const frets = [fifthOk ? 0 : null, ...frets4];
+    const fing = autoFingerFor(frets);
+    if (!fing) continue;                                   // unplayable (too many fingers)
+
+    const key = frets.join(',');
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const allPcs = new Set(pcsHere); if (fifthOk) allPcs.add(pc(open[0]));
+    const missing5 = q.iv.includes(7) && !allPcs.has(pc(root + 7));
+    const lowest = Math.min(...frets4.map((f, i) => open[i + 1] + f));
+    const openCount = frets4.filter(f => f === 0).length;
+    let score = minF * 1.0 + fretted.length * 0.6 + (maxF - minF) * 0.5
+      + (missing5 ? 1.5 : 0)
+      + (pc(lowest) !== root ? 1.0 : 0)
+      + (fing.barres.length ? 1.0 : 0)
+      + (!fifthOk ? 0.5 : 0)
+      + (openCount && minF > 5 ? 1.5 : 0);
+    out.push({ frets, fingers: fing.fingers, barres: fing.barres, score });
+  }
+  out.sort((a, b) => a.score - b.score);
+  return out.slice(0, limit);
+}
+
+/* ---------- fingering heuristic ---------- */
+
+// Returns { fingers, barres } or null if the shape needs more than 4 fingers and can't be barred.
+function autoFingerFor(frets) {
+  const fingers = ['', '', '', '', ''];
+  const notes = [];
+  for (let s = 0; s < 5; s++) if (frets[s] > 0) notes.push({ s, f: frets[s] });
+  if (!notes.length) return { fingers, barres: [] };
+  const minF = Math.min(...notes.map(n => n.f));
+  const atMin = notes.filter(n => n.f === minF);
+  const others = notes.filter(n => n.f !== minF);
+
+  let barres = [];
+  let rest = notes;
+  let next = 1;
+  const wantBarre = notes.length > 4 || atMin.length >= 3;
+  if (wantBarre && atMin.length >= 2) {
+    const from = Math.min(...atMin.map(n => n.s)), to = Math.max(...atMin.map(n => n.s));
+    // A barre can't pass over an open or muted string.
+    let ok = true;
+    for (let s = from; s <= to; s++) if (!(frets[s] >= minF)) ok = false;
+    if (ok && others.length <= 3) {
+      barres = [{ fret: minF, from, to, finger: '1' }];
+      rest = others;
+      next = 2;
+    } else if (notes.length > 4) return null;
+  } else if (notes.length > 4) return null;
+
+  rest = rest.slice().sort((a, b) => a.f - b.f || a.s - b.s);
+  const base = barres.length ? minF : minF - 1;
+  let prev = next - 1;
+  for (const n of rest) {
+    let finger = Math.max(prev + 1, n.f - base + (barres.length ? 1 : 0));
+    if (finger > 4) finger = prev + 1;
+    if (finger > 4) return null;
+    fingers[n.s] = String(finger);
+    prev = finger;
+  }
+  return { fingers, barres };
+}
+
+/* ================= State ================= */
+
+const STORE_KEY = 'banjo-chordbuilder-v1';
+
+function blankChord(tuning) {
+  return { name: '', tuning: tuning || 'openG', startFret: 1, numFrets: 5,
+           frets: [0, 0, 0, 0, 0], fingers: ['', '', '', '', ''], barres: [] };
+}
+const clone = o => JSON.parse(JSON.stringify(o));
+
+let state = {
+  settings: { cols: 4, fingerStyle: 'in', showNotes: false, dashed5: true, title: 'Banjo Chords' },
+  sheet: [],
+};
+let cur = blankChord();
+let editingIndex = null;
+let tool = 'dot';
+let finger = '';
+let pendingBarre = null;      // { s, f } after first barre click
+let history = [];
+let nameTouched = false;      // user typed a name; don't auto-overwrite it
+
+function save() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
+}
+function load() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (s && Array.isArray(s.sheet)) state = { settings: { ...state.settings, ...s.settings }, sheet: s.sheet };
+    }
+  } catch (e) { /* ignore */ }
+}
+
+/* ================= Rendering ================= */
+
+const SVGNS = 'http://www.w3.org/2000/svg';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+
+function renderSVG(ch, { interactive = false } = {}) {
+  const st = state.settings;
+  const N = ch.numFrets, start = ch.startFret;
+  const PL = 50, PR = 28, SX = 36, FY = 46, TITLE = 44, MARK = 26;
+  const TOP = TITLE + MARK;
+  const below = st.fingerStyle === 'below';
+  const BOT = 14 + (below ? 22 : 0) + (st.showNotes ? 22 : 0);
+  const W = PL + 4 * SX + PR, H = TOP + N * FY + BOT;
+  const x = s => PL + s * SX;
+  const rowOf = f => f - start + 1;
+  const yRow = r => TOP + (r - 0.5) * FY;
+  const font = 'font-family="Helvetica, Arial, sans-serif"';
+  const p = [];
+
+  p.push(`<svg xmlns="${SVGNS}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`);
+  p.push(`<rect width="${W}" height="${H}" fill="#fff"/>`);
+  if (ch.name) p.push(`<text x="${x(2)}" y="${TITLE - 12}" text-anchor="middle" font-size="26" font-weight="700" ${font} fill="#000">${esc(ch.name)}</text>`);
+
+  // Fret wires
+  for (let i = 0; i <= N; i++) {
+    const y = TOP + i * FY;
+    if (i === 0 && start === 1) p.push(`<rect x="${x(0) - 1}" y="${y - 6}" width="${4 * SX + 2}" height="7" fill="#000"/>`);
+    else p.push(`<line x1="${x(0)}" y1="${y}" x2="${x(4)}" y2="${y}" stroke="#000" stroke-width="${i === 0 ? 2 : 1.5}"/>`);
+  }
+  if (start > 1) p.push(`<text x="${x(0) - 14}" y="${yRow(1) + 6}" text-anchor="end" font-size="17" ${font} fill="#000">${start}fr</text>`);
+
+  // Strings; the 5th string is drawn dashed where it doesn't exist (frets 0-5).
+  for (let s = 0; s < 5; s++) {
+    const y0 = TOP, y1 = TOP + N * FY;
+    if (s === 0 && st.dashed5) {
+      const rowsAbsent = Math.max(0, Math.min(N, 5 - start + 1));   // rows whose fret number <= 5
+      const yb = TOP + rowsAbsent * FY;
+      if (rowsAbsent > 0) p.push(`<line x1="${x(s)}" y1="${y0}" x2="${x(s)}" y2="${yb}" stroke="#000" stroke-width="1.2" stroke-dasharray="3 4"/>`);
+      if (yb < y1) p.push(`<line x1="${x(s)}" y1="${yb}" x2="${x(s)}" y2="${y1}" stroke="#000" stroke-width="1.5"/>`);
+    } else {
+      p.push(`<line x1="${x(s)}" y1="${y0}" x2="${x(s)}" y2="${y1}" stroke="#000" stroke-width="1.5"/>`);
+    }
+  }
+
+  // Markers above the nut: open / muted / off-chart fret number
+  for (let s = 0; s < 5; s++) {
+    const f = ch.frets[s], y = TOP - 14;
+    if (ch.hideMarkers) break;
+    if (f === null) {
+      const d = 6;
+      p.push(`<path d="M${x(s) - d} ${y - d}L${x(s) + d} ${y + d}M${x(s) + d} ${y - d}L${x(s) - d} ${y + d}" stroke="#000" stroke-width="2.2"/>`);
+    } else if (f === 0) {
+      p.push(`<circle cx="${x(s)}" cy="${y}" r="7" fill="#fff" stroke="#000" stroke-width="2"/>`);
+    } else {
+      const r = rowOf(f);
+      if (r < 1 || r > N) p.push(`<text x="${x(s)}" y="${y + 5}" text-anchor="middle" font-size="13" font-weight="700" ${font} fill="#000">${f}</text>`);
+    }
+  }
+
+  // Barres
+  const covered = (s, f) => ch.barres.some(b => b.fret === f && s >= b.from && s <= b.to);
+  for (const b of ch.barres) {
+    const r = rowOf(b.fret);
+    if (r < 1 || r > N) continue;
+    const y = yRow(r);
+    p.push(`<rect x="${x(b.from) - 14}" y="${y - 14}" width="${x(b.to) - x(b.from) + 28}" height="28" rx="14" fill="#000"/>`);
+    if (b.finger && st.fingerStyle === 'in') p.push(`<text x="${(x(b.from) + x(b.to)) / 2}" y="${y + 6}" text-anchor="middle" font-size="17" font-weight="700" ${font} fill="#fff">${esc(b.finger)}</text>`);
+  }
+
+  // Dots
+  for (let s = 0; s < 5; s++) {
+    const f = ch.frets[s];
+    if (!(f > 0) || covered(s, f)) continue;
+    const r = rowOf(f);
+    if (r < 1 || r > N) continue;
+    const y = yRow(r);
+    p.push(`<circle cx="${x(s)}" cy="${y}" r="14" fill="#000"/>`);
+    if (ch.fingers[s] && st.fingerStyle === 'in') p.push(`<text x="${x(s)}" y="${y + 6}" text-anchor="middle" font-size="17" font-weight="700" ${font} fill="#fff">${esc(ch.fingers[s])}</text>`);
+  }
+
+  // Rows below the chart
+  let yb = TOP + N * FY + 22;
+  if (below) {
+    for (let s = 0; s < 5; s++) {
+      const f = ch.frets[s];
+      let lab = '';
+      if (f > 0) {
+        const b = ch.barres.find(b => b.fret === f && s >= b.from && s <= b.to);
+        lab = b ? b.finger : ch.fingers[s];
+      }
+      if (lab) p.push(`<text x="${x(s)}" y="${yb}" text-anchor="middle" font-size="15" ${font} fill="#000">${esc(lab)}</text>`);
+    }
+    yb += 22;
+  }
+  if (st.showNotes) {
+    for (let s = 0; s < 5; s++) {
+      const pt = pitchAt(ch.tuning, s, ch.frets[s]);
+      if (pt !== null) p.push(`<text x="${x(s)}" y="${yb}" text-anchor="middle" font-size="13" ${font} fill="#444">${NOTE_NAMES[pc(pt)]}</text>`);
+    }
+  }
+
+  // Click targets (editor only)
+  if (interactive) {
+    for (let s = 0; s < 5; s++) {
+      p.push(`<rect class="hit" data-s="${s}" data-r="0" x="${x(s) - SX / 2}" y="${TITLE}" width="${SX}" height="${MARK}"/>`);
+      for (let r = 1; r <= N; r++) {
+        const pend = pendingBarre && pendingBarre.s === s && pendingBarre.f === start + r - 1 ? ' pending' : '';
+        p.push(`<rect class="hit${pend}" data-s="${s}" data-r="${r}" x="${x(s) - SX / 2}" y="${TOP + (r - 1) * FY}" width="${SX}" height="${FY}"/>`);
+      }
+    }
+  }
+  p.push('</svg>');
+  return p.join('');
+}
+
+/* ================= Editor ================= */
+
+const $ = id => document.getElementById(id);
+
+function flash(text) {
+  $('msg').textContent = text;
+  clearTimeout(flash.t);
+  flash.t = setTimeout(() => { $('msg').textContent = ''; }, 3500);
+}
+
+function pushHistory() {
+  history.push(clone(cur));
+  if (history.length > 100) history.shift();
+}
+
+function undo() {
+  if (!history.length) return;
+  cur = history.pop();
+  pendingBarre = null;
+  refreshEditor();
+}
+
+function onCellClick(s, r) {
+  const ch = cur;
+  if (r === 0) {                                       // above the nut
+    pushHistory();
+    if (ch.frets[s] === 0) ch.frets[s] = null;
+    else ch.frets[s] = 0;
+    ch.fingers[s] = '';
+    ch.barres = ch.barres.filter(b => !(s >= b.from && s <= b.to && ch.frets[s] !== b.fret));
+    pendingBarre = null;
+    return refreshEditor();
+  }
+  const f = ch.startFret + r - 1;
+  if (s === 0 && f < FIFTH_MIN_FRET) {
+    pendingBarre = null;
+    flash('The 5th string starts at the 5th fret — its first fret is 6.');
+    return refreshEditor();
+  }
+
+  if (tool === 'barre') {
+    const existing = ch.barres.findIndex(b => b.fret === f && s >= b.from && s <= b.to);
+    if (existing >= 0 && !pendingBarre) {
+      pushHistory();
+      removeBarre(existing);
+      return refreshEditor();
+    }
+    if (!pendingBarre || pendingBarre.f !== f) {
+      pendingBarre = { s, f };
+      flash('Now click the other end of the barre on the same fret.');
+      return refreshEditor();
+    }
+    let from = Math.min(pendingBarre.s, s), to = Math.max(pendingBarre.s, s);
+    pendingBarre = null;
+    if (from === to) return refreshEditor();
+    pushHistory();
+    ch.barres = ch.barres.filter(b => b.to < from || b.from > to || b.fret !== f);
+    if (from === 0 && f < FIFTH_MIN_FRET) from = 1;
+    for (let k = from; k <= to; k++) {
+      if (ch.frets[k] === null || ch.frets[k] < f) { ch.frets[k] = f; ch.fingers[k] = ''; }
+    }
+    ch.barres.push({ fret: f, from, to, finger: finger || '1' });
+    $('msg').textContent = '';
+    return refreshEditor();
+  }
+
+  // Dot tool
+  pendingBarre = null;
+  pushHistory();
+  const bi = ch.barres.findIndex(b => b.fret === f && s >= b.from && s <= b.to);
+  if (bi >= 0) {
+    if (finger && ch.barres[bi].finger !== finger) ch.barres[bi].finger = finger;
+    else removeBarre(bi);
+  } else if (ch.frets[s] === f) {
+    if (finger && ch.fingers[s] !== finger) ch.fingers[s] = finger;
+    else { ch.frets[s] = 0; ch.fingers[s] = ''; }
+  } else {
+    ch.frets[s] = f;
+    ch.fingers[s] = finger;
+  }
+  refreshEditor();
+}
+
+function removeBarre(i) {
+  const b = cur.barres[i];
+  cur.barres.splice(i, 1);
+  for (let k = b.from; k <= b.to; k++) {
+    if (cur.frets[k] === b.fret) { cur.frets[k] = 0; cur.fingers[k] = ''; }
+  }
+}
+
+function refreshEditor() {
+  const ed = $('editor');
+  const det = detectChord(cur);
+  if (!nameTouched) cur.name = det.length ? det[0].name : '';
+  $('chordName').value = cur.name;
+  $('startFret').value = cur.startFret;
+  $('numFrets').value = cur.numFrets;
+  $('tuning').value = cur.tuning;
+  ed.innerHTML = renderSVG(cur, { interactive: true });
+  if (det.length) {
+    const alts = det.slice(1, 4).map(d => esc(d.name)).join(', ');
+    $('detected').innerHTML = `Sounds like <b>${esc(det[0].name)}</b>${det[0].partial ? ' (no 5th)' : ''}` + (alts ? ` <span class="hint">· also ${alts}</span>` : '');
+  } else {
+    $('detected').innerHTML = '<span class="hint">No chord recognised.</span>';
+  }
+  $('useDetected').disabled = !det.length || det[0].name === cur.name;
+  $('saveToSheet').disabled = editingIndex === null;
+  $('undo').disabled = !history.length;
+  renderSheet();
+}
+
+function loadIntoEditor(ch, index = null) {
+  pushHistory();
+  cur = clone(ch);
+  delete cur.hideMarkers;
+  editingIndex = index;
+  pendingBarre = null;
+  const det = detectChord(cur);
+  nameTouched = !!cur.name && !(det.length && det[0].name === cur.name);
+  refreshEditor();
+}
+
+/* ================= Sheet ================= */
+
+function renderSheet() {
+  const sh = $('sheet');
+  sh.style.setProperty('--cols', state.settings.cols);
+  if (!state.sheet.length) {
+    sh.innerHTML = '<div class="empty">Your sheet is empty. Build a chord and press “Add to sheet”, or add a quick-start set.</div>';
+    return;
+  }
+  sh.innerHTML = state.sheet.map((ch, i) => `
+    <div class="sheet-item${i === editingIndex ? ' editing' : ''}" data-i="${i}" tabindex="0" title="Click to edit">
+      ${renderSVG(ch)}
+      <div class="tools">
+        <button data-act="left" title="Move left" aria-label="Move left">◀</button>
+        <button data-act="right" title="Move right" aria-label="Move right">▶</button>
+        <button data-act="dup" title="Duplicate" aria-label="Duplicate">⧉</button>
+        <button data-act="del" title="Remove" aria-label="Remove">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+function sheetAction(i, act) {
+  const a = state.sheet;
+  if (act === 'del') {
+    a.splice(i, 1);
+    if (editingIndex === i) editingIndex = null;
+    else if (editingIndex > i) editingIndex--;
+  } else if (act === 'dup') {
+    a.splice(i + 1, 0, clone(a[i]));
+    if (editingIndex > i) editingIndex++;
+  } else if (act === 'left' || act === 'right') {
+    const j = act === 'left' ? i - 1 : i + 1;
+    if (j < 0 || j >= a.length) return;
+    [a[i], a[j]] = [a[j], a[i]];
+    if (editingIndex === i) editingIndex = j;
+    else if (editingIndex === j) editingIndex = i;
+  }
+  save();
+  refreshEditor();
+}
+
+function chordFromName(name, tuning) {
+  const parsed = parseChordName(name);
+  if (!parsed) return null;
+  const v = generateVoicings(tuning, parsed.root, parsed.q, 1)[0];
+  if (!v) return null;
+  return voicingToChord(v, NOTE_NAMES[parsed.root] + parsed.q.suffix, tuning);
+}
+
+function voicingToChord(v, name, tuning) {
+  const fretted = v.frets.filter(f => f > 0);
+  const maxF = fretted.length ? Math.max(...fretted) : 0;
+  const minF = fretted.length ? Math.min(...fretted) : 1;
+  const startFret = maxF <= 5 ? 1 : minF;
+  return { name, tuning, startFret, numFrets: 5, frets: v.frets.slice(), fingers: v.fingers.slice(), barres: clone(v.barres) };
+}
+
+/* ================= Library UI ================= */
+
+let libVoicings = [];
+
+function findVoicings() {
+  const root = +$('libRoot').value;
+  const q = QUALITIES[+$('libQual').value];
+  const name = NOTE_NAMES[root] + q.suffix;
+  libVoicings = generateVoicings(cur.tuning, root, q).map(v => voicingToChord(v, name, cur.tuning));
+  $('libInfo').textContent = libVoicings.length
+    ? `${libVoicings.length} voicings of ${name} in ${TUNINGS[cur.tuning].name}, easiest first. Click one to load it.`
+    : `No playable voicing found for ${name} in this tuning.`;
+  $('libStrip').innerHTML = libVoicings.map((ch, i) =>
+    `<button data-i="${i}" title="${esc(name)} voicing ${i + 1}">${renderSVG(ch)}</button>`).join('');
+}
+
+/* ================= Export ================= */
+
+function download(filename, blob) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+const fileBase = () => (cur.name || 'banjo-chord').replace(/[^\w#-]+/g, '_');
+
+function exportSvg() {
+  download(fileBase() + '.svg', new Blob([renderSVG(cur)], { type: 'image/svg+xml' }));
+}
+function exportPng() {
+  const svg = renderSVG(cur);
+  const img = new Image();
+  img.onload = () => {
+    const scale = 3;
+    const c = document.createElement('canvas');
+    c.width = img.width * scale; c.height = img.height * scale;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+    g.drawImage(img, 0, 0, c.width, c.height);
+    c.toBlob(b => download(fileBase() + '.png', b), 'image/png');
+  };
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+
+/* ================= Wiring ================= */
+
+function init() {
+  load();
+
+  for (const [id, t] of Object.entries(TUNINGS)) $('tuning').add(new Option(t.name, id));
+  NOTE_NAMES.forEach((n, i) => $('libRoot').add(new Option(n, i)));
+  QUALITIES.forEach((q, i) => $('libQual').add(new Option(q.label, i)));
+  $('libRoot').value = 7;  // G
+  PRESET_SETS.forEach((p, i) => $('presetSet').add(new Option(p.name, i)));
+
+  const s = state.settings;
+  $('cols').value = s.cols;
+  $('fingerStyle').value = s.fingerStyle;
+  $('showNotes').checked = s.showNotes;
+  $('dashed5').checked = s.dashed5;
+  $('sheetTitle').value = s.title;
+
+  // Editor clicks
+  $('editor').addEventListener('click', e => {
+    const t = e.target.closest('.hit');
+    if (t) onCellClick(+t.dataset.s, +t.dataset.r);
+  });
+
+  document.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => {
+    tool = b.dataset.tool;
+    pendingBarre = null;
+    document.querySelectorAll('[data-tool]').forEach(x => x.setAttribute('aria-pressed', x === b));
+    refreshEditor();
+  }));
+  document.querySelectorAll('[data-finger]').forEach(b => b.addEventListener('click', () => {
+    finger = b.dataset.finger;
+    document.querySelectorAll('[data-finger]').forEach(x => x.setAttribute('aria-pressed', x === b));
+  }));
+
+  $('chordName').addEventListener('input', e => {
+    cur.name = e.target.value;
+    nameTouched = cur.name !== '';
+    $('editor').innerHTML = renderSVG(cur, { interactive: true });
+    const det = detectChord(cur);
+    $('useDetected').disabled = !det.length || det[0].name === cur.name;
+  });
+  $('useDetected').addEventListener('click', () => { nameTouched = false; refreshEditor(); });
+
+  $('tuning').addEventListener('change', e => { pushHistory(); cur.tuning = e.target.value; refreshEditor(); });
+  $('startFret').addEventListener('change', e => {
+    const v = Math.max(1, Math.min(20, parseInt(e.target.value, 10) || 1));
+    pushHistory(); cur.startFret = v; refreshEditor();
+  });
+  $('numFrets').addEventListener('change', e => {
+    const v = Math.max(3, Math.min(8, parseInt(e.target.value, 10) || 5));
+    pushHistory(); cur.numFrets = v; refreshEditor();
+  });
+
+  $('autoFinger').addEventListener('click', () => {
+    const r = autoFingerFor(cur.frets);
+    if (!r) return flash('This shape needs more than four fingers — add a barre by hand.');
+    pushHistory();
+    cur.fingers = r.fingers; cur.barres = r.barres;
+    refreshEditor();
+  });
+  $('clearFingers').addEventListener('click', () => {
+    pushHistory();
+    cur.fingers = ['', '', '', '', ''];
+    cur.barres.forEach(b => b.finger = '');
+    refreshEditor();
+  });
+  $('clearChord').addEventListener('click', () => {
+    pushHistory();
+    const keep = { tuning: cur.tuning, startFret: cur.startFret, numFrets: cur.numFrets };
+    cur = { ...blankChord(), ...keep };
+    nameTouched = false;
+    refreshEditor();
+  });
+  $('undo').addEventListener('click', undo);
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey
+        && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); undo(); }
+  });
+
+  $('addToSheet').addEventListener('click', () => {
+    state.sheet.push(clone(cur));
+    editingIndex = state.sheet.length - 1;
+    save(); refreshEditor();
+    flash('');
+  });
+  $('saveToSheet').addEventListener('click', () => {
+    if (editingIndex === null) return;
+    state.sheet[editingIndex] = clone(cur);
+    save(); refreshEditor();
+  });
+  $('dlSvg').addEventListener('click', exportSvg);
+  $('dlPng').addEventListener('click', exportPng);
+
+  // Library
+  $('libFind').addEventListener('click', findVoicings);
+  $('libStrip').addEventListener('click', e => {
+    const b = e.target.closest('button[data-i]');
+    if (!b) return;
+    document.querySelectorAll('#libStrip button').forEach(x => x.classList.toggle('active', x === b));
+    loadIntoEditor(libVoicings[+b.dataset.i], null);
+  });
+  $('addPreset').addEventListener('click', () => {
+    const set = PRESET_SETS[+$('presetSet').value];
+    const failed = [];
+    for (const n of set.chords) {
+      const ch = chordFromName(n, cur.tuning);
+      if (ch) state.sheet.push(ch); else failed.push(n);
+    }
+    save(); refreshEditor();
+    if (failed.length) flash('No voicing found for: ' + failed.join(', '));
+  });
+
+  // Sheet
+  $('sheet').addEventListener('click', e => {
+    const item = e.target.closest('.sheet-item');
+    if (!item) return;
+    const i = +item.dataset.i;
+    const act = e.target.closest('button[data-act]');
+    if (act) return sheetAction(i, act.dataset.act);
+    loadIntoEditor(state.sheet[i], i);
+  });
+  $('sheet').addEventListener('keydown', e => {
+    const item = e.target.closest('.sheet-item');
+    if (item && e.target === item && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault(); loadIntoEditor(state.sheet[+item.dataset.i], +item.dataset.i);
+    }
+  });
+  const setSetting = (k, v) => { state.settings[k] = v; save(); refreshEditor(); };
+  $('cols').addEventListener('change', e => setSetting('cols', +e.target.value));
+  $('fingerStyle').addEventListener('change', e => setSetting('fingerStyle', e.target.value));
+  $('showNotes').addEventListener('change', e => setSetting('showNotes', e.target.checked));
+  $('dashed5').addEventListener('change', e => setSetting('dashed5', e.target.checked));
+  $('sheetTitle').addEventListener('input', e => { state.settings.title = e.target.value; save(); });
+  $('addBlank').addEventListener('click', () => {
+    // A blank chart (no name, no open-string markers) to fill in by hand.
+    state.sheet.push({ ...blankChord(cur.tuning), hideMarkers: true });
+    save(); refreshEditor();
+  });
+  $('clearSheet').addEventListener('click', () => {
+    if (!state.sheet.length || !confirm('Remove all chords from the sheet?')) return;
+    state.sheet = []; editingIndex = null; save(); refreshEditor();
+  });
+  $('exportJson').addEventListener('click', () => {
+    const name = (state.settings.title || 'banjo-chords').replace(/[^\w#-]+/g, '_');
+    download(name + '.json', new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }));
+  });
+  $('importJson').addEventListener('click', () => $('importFile').click());
+  $('importFile').addEventListener('change', async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try {
+      const data = JSON.parse(await f.text());
+      if (!Array.isArray(data.sheet)) throw new Error('missing sheet');
+      state = { settings: { ...state.settings, ...data.settings }, sheet: data.sheet };
+      editingIndex = null;
+      init.applySettings();
+      save(); refreshEditor();
+    } catch (err) { flash('Could not read that file: ' + err.message); }
+    e.target.value = '';
+  });
+  $('print').addEventListener('click', () => window.print());
+
+  init.applySettings = () => {
+    const s = state.settings;
+    $('cols').value = s.cols; $('fingerStyle').value = s.fingerStyle;
+    $('showNotes').checked = s.showNotes; $('dashed5').checked = s.dashed5;
+    $('sheetTitle').value = s.title;
+  };
+
+  refreshEditor();
+  history = [];
+  $('undo').disabled = true;
+}
+
+init();
+</script>
+</body>
+</html>
